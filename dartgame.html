@@ -1,0 +1,336 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8" />
+  <title>Dart Timing Game</title>
+  <style>
+    /* Same styles as before */
+    body {
+      font-family: 'Segoe UI', sans-serif;
+      background: #121212;
+      color: white;
+      display: flex;
+      flex-direction: column;
+      align-items: center;
+      padding: 20px;
+      margin: 0;
+      user-select: none;
+    }
+    #gameWrapper {
+      display: grid;
+      grid-template-columns: 400px 50px;
+      grid-template-rows: 50px 400px;
+      gap: 10px;
+      align-items: center;
+      justify-content: center;
+    }
+    canvas {
+      background: #000;
+      border: 2px solid #444;
+      border-radius: 4px;
+      display: block;
+    }
+    #horizontalSlider {
+      grid-column: 1 / 2;
+      grid-row: 1 / 2;
+    }
+    #dartboard {
+      grid-column: 1 / 2;
+      grid-row: 2 / 3;
+      border-radius: 50%;
+    }
+    #verticalSlider {
+      grid-column: 2 / 3;
+      grid-row: 2 / 3;
+    }
+    #scoreboard {
+      margin-top: 15px;
+      font-size: 18px;
+    }
+    #message {
+      margin-top: 5px;
+      font-size: 16px;
+      color: #ccc;
+    }
+    #scorePopup {
+      position: fixed;
+      top: 50%;
+      left: 50%;
+      transform: translate(-50%, -50%);
+      background: rgba(0, 0, 0, 0.85);
+      color: white;
+      padding: 10px 25px;
+      border-radius: 12px;
+      font-size: 36px;
+      font-weight: bold;
+      opacity: 0;
+      transition: opacity 0.4s ease;
+      pointer-events: none;
+      z-index: 1000;
+      text-align: center;
+      white-space: nowrap;
+      user-select: none;
+    }
+    select, button {
+      margin: 10px 5px;
+      font-size: 16px;
+      cursor: pointer;
+    }
+  </style>
+</head>
+<body>
+  <h1>🎯 Dart Timing Game</h1>
+  <div>
+    Difficulty:
+    <select id="difficulty">
+      <option value="4">Easy</option>
+      <option value="8">Medium</option>
+      <option value="12">Hard</option>
+    </select>
+    <button onclick="restartGame()">Restart</button>
+  </div>
+
+  <div id="gameWrapper">
+    <canvas id="horizontalSlider" width="400" height="50"></canvas>
+    <canvas id="dartboard" width="400" height="400"></canvas>
+    <canvas id="verticalSlider" width="50" height="400"></canvas>
+  </div>
+
+  <div id="scoreboard">Score: <span id="score">0</span> | Dart: <span id="dartCount">0</span>/5</div>
+  <div id="message">Click to set horizontal aim</div>
+  <div id="scorePopup"></div>
+
+  <script>
+    const dartboard = document.getElementById('dartboard');
+    const ctxBoard = dartboard.getContext('2d');
+    const hSlider = document.getElementById('horizontalSlider');
+    const vSlider = document.getElementById('verticalSlider');
+    const ctxH = hSlider.getContext('2d');
+    const ctxV = vSlider.getContext('2d');
+    const scoreEl = document.getElementById('score');
+    const dartEl = document.getElementById('dartCount');
+    const msgEl = document.getElementById('message');
+    const popup = document.getElementById('scorePopup');
+    const difficultySel = document.getElementById('difficulty');
+
+    const boardCenter = 200;
+    const boardRadius = 200;
+
+    // Order of numbers on dartboard
+    const numbers = [20, 1, 18, 4, 13, 6, 10, 15, 2, 17,
+                     3, 19, 7, 16, 8, 11, 14, 9, 12, 5];
+    const segments = 20;
+    const anglePerSegment = (2 * Math.PI) / segments;
+
+    // Rotate board so 20 is vertical top, then rotate 15° clockwise more
+    const rotationOffset = -Math.PI / 2 - Math.PI / 21; // -90° - 15° = -105°
+
+    let sliderInterval;
+    let sliderX = 0;
+    let sliderY = 0;
+    let dirX = 1;
+    let dirY = 1;
+    let hPos = 0;
+    let vPos = 0;
+    let aimState = 'horizontal';
+    let dartsThrown = 0;
+    let totalScore = 0;
+
+    function drawDartboard() {
+      ctxBoard.clearRect(0, 0, 400, 400);
+
+      // Draw black and white segments
+      for (let i = 0; i < segments; i++) {
+        const startAngle = i * anglePerSegment + rotationOffset;
+        const endAngle = startAngle + anglePerSegment;
+
+        ctxBoard.beginPath();
+        ctxBoard.moveTo(boardCenter, boardCenter);
+        ctxBoard.arc(boardCenter, boardCenter, boardRadius, startAngle, endAngle);
+        ctxBoard.fillStyle = (i % 2 === 0) ? '#000' : '#fff';
+        ctxBoard.fill();
+
+        // Triple ring (middle thin ring)
+        ctxBoard.beginPath();
+        ctxBoard.arc(boardCenter, boardCenter, 115, startAngle, endAngle);
+        ctxBoard.arc(boardCenter, boardCenter, 105, endAngle, startAngle, true);
+        ctxBoard.closePath();
+        ctxBoard.fillStyle = (i % 2 === 0) ? '#006400' : '#8B0000'; // dark green, dark red
+        ctxBoard.fill();
+
+        // Double ring (outer thin ring)
+        ctxBoard.beginPath();
+        ctxBoard.arc(boardCenter, boardCenter, 200, startAngle, endAngle);
+        ctxBoard.arc(boardCenter, boardCenter, 190, endAngle, startAngle, true);
+        ctxBoard.closePath();
+        ctxBoard.fillStyle = (i % 2 === 0) ? '#006400' : '#8B0000'; // dark green, dark red
+        ctxBoard.fill();
+      }
+
+      // Outer bull (green circle)
+      ctxBoard.beginPath();
+      ctxBoard.arc(boardCenter, boardCenter, 15, 0, 2 * Math.PI);
+      ctxBoard.fillStyle = '#006400';
+      ctxBoard.fill();
+
+      // Inner bull (red circle)
+      ctxBoard.beginPath();
+      ctxBoard.arc(boardCenter, boardCenter, 6, 0, 2 * Math.PI);
+      ctxBoard.fillStyle = '#8B0000';
+      ctxBoard.fill();
+
+      // Draw numbers around the edge
+      ctxBoard.fillStyle = 'white';
+      ctxBoard.font = 'bold 20px Arial';
+      ctxBoard.textAlign = 'center';
+      ctxBoard.textBaseline = 'middle';
+
+      const numberRadius = boardRadius + 25; // outside the double ring
+
+      for (let i = 0; i < segments; i++) {
+        const angle = i * anglePerSegment + rotationOffset + anglePerSegment / 2;
+        const x = boardCenter + Math.cos(angle) * numberRadius;
+        const y = boardCenter + Math.sin(angle) * numberRadius;
+
+        ctxBoard.save();
+        ctxBoard.translate(x, y);
+        ctxBoard.rotate(angle + Math.PI / 2);
+        ctxBoard.fillText(numbers[i], 0, 0);
+        ctxBoard.restore();
+      }
+    }
+
+    function getDartScore(x, y) {
+      const dx = x - boardCenter;
+      const dy = y - boardCenter;
+      const dist = Math.sqrt(dx * dx + dy * dy);
+
+      let angle = Math.atan2(dy, dx) - rotationOffset;
+      if (angle < 0) angle += 2 * Math.PI;
+      const segmentIndex = Math.floor(angle / anglePerSegment);
+      const baseScore = numbers[segmentIndex];
+
+      if (dist <= 6) return { score: 50, label: 'Inner Bull' };
+      if (dist <= 15) return { score: 25, label: 'Outer Bull' };
+      if (dist >= 190 && dist <= 200) return { score: baseScore * 2, label: `Double ${baseScore}` };
+      if (dist >= 105 && dist <= 115) return { score: baseScore * 3, label: `Triple ${baseScore}` };
+      if (dist > 200) return { score: 0, label: 'Miss' };
+      return { score: baseScore, label: `${baseScore}` };
+    }
+
+    function drawDart(x, y) {
+      ctxBoard.save();
+      ctxBoard.strokeStyle = 'yellow';
+      ctxBoard.lineWidth = 3;
+
+      ctxBoard.beginPath();
+      ctxBoard.moveTo(x, y);
+      ctxBoard.lineTo(x - 20, y - 35);
+      ctxBoard.stroke();
+
+      ctxBoard.fillStyle = 'silver';
+      ctxBoard.beginPath();
+      ctxBoard.moveTo(x - 20, y - 35);
+      ctxBoard.lineTo(x - 10, y - 40);
+      ctxBoard.lineTo(x - 15, y - 25);
+      ctxBoard.closePath();
+      ctxBoard.fill();
+
+      ctxBoard.fillStyle = 'red';
+      ctxBoard.beginPath();
+      ctxBoard.moveTo(x - 20, y - 35);
+      ctxBoard.lineTo(x - 30, y - 30);
+      ctxBoard.lineTo(x - 30, y - 40);
+      ctxBoard.closePath();
+      ctxBoard.fill();
+
+      ctxBoard.restore();
+    }
+
+    function showScorePopup(score, label) {
+      popup.textContent = `${label} (+${score})`;
+      popup.style.opacity = '1';
+      setTimeout(() => {
+        popup.style.opacity = '0';
+      }, 1400);
+    }
+
+    function throwDart(x, y) {
+      drawDart(x, y);
+      const result = getDartScore(x, y);
+
+      totalScore += result.score;
+      dartsThrown++;
+      scoreEl.textContent = totalScore;
+      dartEl.textContent = dartsThrown;
+      showScorePopup(result.score, result.label);
+
+      if (dartsThrown >= 5) {
+        msgEl.textContent = `🎯 Game Over! Final Score: ${totalScore}`;
+        clearInterval(sliderInterval);
+      } else {
+        setTimeout(() => startSlider('horizontal'), 500);
+      }
+    }
+
+    function startSlider(axis) {
+      clearInterval(sliderInterval);
+      const speed = parseInt(difficultySel.value);
+
+      if (axis === 'horizontal') {
+        sliderX = 0;
+        dirX = 1;
+        sliderInterval = setInterval(() => {
+          ctxH.clearRect(0, 0, 400, 50);
+          sliderX += dirX * speed;
+          if (sliderX < 0) dirX = 1;
+          if (sliderX > 400) dirX = -1;
+          ctxH.fillStyle = 'lime';
+          ctxH.fillRect(sliderX - 7, 0, 14, 50);
+        }, 16);
+      } else {
+        sliderY = 0;
+        dirY = 1;
+        sliderInterval = setInterval(() => {
+          ctxV.clearRect(0, 0, 50, 400);
+          sliderY += dirY * speed;
+          if (sliderY < 0) dirY = 1;
+          if (sliderY > 400) dirY = -1;
+          ctxV.fillStyle = 'aqua';
+          ctxV.fillRect(0, sliderY - 7, 50, 14);
+        }, 16);
+      }
+    }
+
+    document.body.addEventListener('click', () => {
+      if (dartsThrown >= 5) return;
+      if (aimState === 'horizontal') {
+        hPos = sliderX;
+        aimState = 'vertical';
+        msgEl.textContent = 'Click to set vertical aim';
+        startSlider('vertical');
+      } else {
+        vPos = sliderY;
+        aimState = 'horizontal';
+        msgEl.textContent = 'Click to set horizontal aim';
+        clearInterval(sliderInterval);
+        throwDart(hPos, vPos);
+      }
+    });
+
+    function restartGame() {
+      dartsThrown = 0;
+      totalScore = 0;
+      scoreEl.textContent = '0';
+      dartEl.textContent = '0';
+      aimState = 'horizontal';
+      msgEl.textContent = 'Click to set horizontal aim';
+      drawDartboard();
+      startSlider('horizontal');
+    }
+
+    drawDartboard();
+    startSlider('horizontal');
+  </script>
+</body>
+</html>
