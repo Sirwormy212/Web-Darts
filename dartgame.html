@@ -4,7 +4,6 @@
   <meta charset="UTF-8" />
   <title>Dart Timing Game</title>
   <style>
-    /* Same styles as before */
     body {
       font-family: 'Segoe UI', sans-serif;
       background: #121212;
@@ -18,8 +17,9 @@
     }
     #gameWrapper {
       display: grid;
-      grid-template-columns: 400px 50px;
-      grid-template-rows: 50px 400px;
+      /* Adjust grid to leave extra space for numbers on the right and bottom */
+      grid-template-columns: 460px 60px;  /* increased width of dartboard cell */
+      grid-template-rows: 50px 460px;    /* increased height of dartboard cell */
       gap: 10px;
       align-items: center;
       justify-content: center;
@@ -33,15 +33,21 @@
     #horizontalSlider {
       grid-column: 1 / 2;
       grid-row: 1 / 2;
+      width: 460px;
+      height: 50px;
     }
     #dartboard {
       grid-column: 1 / 2;
       grid-row: 2 / 3;
       border-radius: 50%;
+      width: 460px;
+      height: 460px;
     }
     #verticalSlider {
       grid-column: 2 / 3;
       grid-row: 2 / 3;
+      width: 60px;
+      height: 460px;
     }
     #scoreboard {
       margin-top: 15px;
@@ -87,13 +93,13 @@
       <option value="8">Medium</option>
       <option value="12">Hard</option>
     </select>
-    <button onclick="restartGame()">Restart</button>
+    <button onclick="location.reload()">Restart</button>
   </div>
 
   <div id="gameWrapper">
-    <canvas id="horizontalSlider" width="400" height="50"></canvas>
-    <canvas id="dartboard" width="400" height="400"></canvas>
-    <canvas id="verticalSlider" width="50" height="400"></canvas>
+    <canvas id="horizontalSlider" width="460" height="50"></canvas>
+    <canvas id="dartboard" width="460" height="460"></canvas>
+    <canvas id="verticalSlider" width="60" height="460"></canvas>
   </div>
 
   <div id="scoreboard">Score: <span id="score">0</span> | Dart: <span id="dartCount">0</span>/5</div>
@@ -113,17 +119,15 @@
     const popup = document.getElementById('scorePopup');
     const difficultySel = document.getElementById('difficulty');
 
-    const boardCenter = 200;
+    // Board settings
+    const boardCenter = 230;
     const boardRadius = 200;
 
-    // Order of numbers on dartboard
     const numbers = [20, 1, 18, 4, 13, 6, 10, 15, 2, 17,
                      3, 19, 7, 16, 8, 11, 14, 9, 12, 5];
     const segments = 20;
     const anglePerSegment = (2 * Math.PI) / segments;
-
-    // Rotate board so 20 is vertical top, then rotate 15° clockwise more
-    const rotationOffset = -Math.PI / 2 - Math.PI / 21; // -90° - 15° = -105°
+    const rotationOffset = -Math.PI / 2 - Math.PI / 21;
 
     let sliderInterval;
     let sliderX = 0;
@@ -137,9 +141,8 @@
     let totalScore = 0;
 
     function drawDartboard() {
-      ctxBoard.clearRect(0, 0, 400, 400);
+      ctxBoard.clearRect(0, 0, 460, 460);
 
-      // Draw black and white segments
       for (let i = 0; i < segments; i++) {
         const startAngle = i * anglePerSegment + rotationOffset;
         const endAngle = startAngle + anglePerSegment;
@@ -150,53 +153,53 @@
         ctxBoard.fillStyle = (i % 2 === 0) ? '#000' : '#fff';
         ctxBoard.fill();
 
-        // Triple ring (middle thin ring)
         ctxBoard.beginPath();
         ctxBoard.arc(boardCenter, boardCenter, 115, startAngle, endAngle);
         ctxBoard.arc(boardCenter, boardCenter, 105, endAngle, startAngle, true);
         ctxBoard.closePath();
-        ctxBoard.fillStyle = (i % 2 === 0) ? '#006400' : '#8B0000'; // dark green, dark red
+        ctxBoard.fillStyle = (i % 2 === 0) ? '#006400' : '#8B0000';
         ctxBoard.fill();
 
-        // Double ring (outer thin ring)
         ctxBoard.beginPath();
         ctxBoard.arc(boardCenter, boardCenter, 200, startAngle, endAngle);
         ctxBoard.arc(boardCenter, boardCenter, 190, endAngle, startAngle, true);
         ctxBoard.closePath();
-        ctxBoard.fillStyle = (i % 2 === 0) ? '#006400' : '#8B0000'; // dark green, dark red
+        ctxBoard.fillStyle = (i % 2 === 0) ? '#006400' : '#8B0000';
         ctxBoard.fill();
       }
 
-      // Outer bull (green circle)
+      // Bulls
       ctxBoard.beginPath();
       ctxBoard.arc(boardCenter, boardCenter, 15, 0, 2 * Math.PI);
       ctxBoard.fillStyle = '#006400';
       ctxBoard.fill();
 
-      // Inner bull (red circle)
       ctxBoard.beginPath();
       ctxBoard.arc(boardCenter, boardCenter, 6, 0, 2 * Math.PI);
       ctxBoard.fillStyle = '#8B0000';
       ctxBoard.fill();
 
-      // Draw numbers around the edge
-      ctxBoard.fillStyle = 'white';
-      ctxBoard.font = 'bold 20px Arial';
+      drawNumbers();
+    }
+
+    function drawNumbers() {
+      ctxBoard.font = 'bold 24px Arial';
       ctxBoard.textAlign = 'center';
       ctxBoard.textBaseline = 'middle';
 
-      const numberRadius = boardRadius + 25; // outside the double ring
+      const numberRadius = boardRadius + 14;
 
       for (let i = 0; i < segments; i++) {
         const angle = i * anglePerSegment + rotationOffset + anglePerSegment / 2;
         const x = boardCenter + Math.cos(angle) * numberRadius;
         const y = boardCenter + Math.sin(angle) * numberRadius;
 
-        ctxBoard.save();
-        ctxBoard.translate(x, y);
-        ctxBoard.rotate(angle + Math.PI / 2);
-        ctxBoard.fillText(numbers[i], 0, 0);
-        ctxBoard.restore();
+        ctxBoard.lineWidth = 6;
+        ctxBoard.strokeStyle = 'black';
+        ctxBoard.strokeText(numbers[i], x, y);
+
+        ctxBoard.fillStyle = 'yellow';
+        ctxBoard.fillText(numbers[i], x, y);
       }
     }
 
@@ -258,7 +261,6 @@
     function throwDart(x, y) {
       drawDart(x, y);
       const result = getDartScore(x, y);
-
       totalScore += result.score;
       dartsThrown++;
       scoreEl.textContent = totalScore;
@@ -276,15 +278,14 @@
     function startSlider(axis) {
       clearInterval(sliderInterval);
       const speed = parseInt(difficultySel.value);
-
       if (axis === 'horizontal') {
         sliderX = 0;
         dirX = 1;
         sliderInterval = setInterval(() => {
-          ctxH.clearRect(0, 0, 400, 50);
+          ctxH.clearRect(0, 0, 460, 50);
           sliderX += dirX * speed;
           if (sliderX < 0) dirX = 1;
-          if (sliderX > 400) dirX = -1;
+          if (sliderX > 460) dirX = -1;
           ctxH.fillStyle = 'lime';
           ctxH.fillRect(sliderX - 7, 0, 14, 50);
         }, 16);
@@ -292,12 +293,12 @@
         sliderY = 0;
         dirY = 1;
         sliderInterval = setInterval(() => {
-          ctxV.clearRect(0, 0, 50, 400);
+          ctxV.clearRect(0, 0, 60, 460);
           sliderY += dirY * speed;
           if (sliderY < 0) dirY = 1;
-          if (sliderY > 400) dirY = -1;
+          if (sliderY > 460) dirY = -1;
           ctxV.fillStyle = 'aqua';
-          ctxV.fillRect(0, sliderY - 7, 50, 14);
+          ctxV.fillRect(0, sliderY - 7, 60, 14);
         }, 16);
       }
     }
