@@ -82,18 +82,37 @@
       font-size: 16px;
       cursor: pointer;
     }
+    .controls {
+      display: flex;
+      align-items: center;
+      gap: 15px;
+      margin-bottom: 10px;
+    }
+    .game-mode {
+      color: #ffcc00;
+      font-weight: bold;
+    }
+    .bust-message {
+      color: #ff4444;
+      font-weight: bold;
+    }
   </style>
 </head>
 <body>
   <h1>🎯 Dart Timing Game</h1>
-  <div>
+  <div class="controls">
+    Game Mode:
+    <select id="gameMode">
+      <option value="score">Score Attack (5 darts)</option>
+      <option value="501">501 (must end on double)</option>
+    </select>
     Difficulty:
     <select id="difficulty">
       <option value="4">Easy</option>
       <option value="8">Medium</option>
       <option value="12">Hard</option>
     </select>
-    <button onclick="location.reload()">Restart</button>
+    <button onclick="restartGame()">Restart</button>
   </div>
 
   <div id="gameWrapper">
@@ -102,7 +121,10 @@
     <canvas id="verticalSlider" width="60" height="460"></canvas>
   </div>
 
-  <div id="scoreboard">Score: <span id="score">0</span> | Dart: <span id="dartCount">0</span>/5</div>
+  <div id="scoreboard">
+    <span id="scoreDisplay">Score: <span id="score">0</span></span>
+    <span id="dartDisplay"> | Dart: <span id="dartCount">0</span>/5</span>
+  </div>
   <div id="message">Click to set horizontal aim</div>
   <div id="scorePopup"></div>
 
@@ -118,6 +140,9 @@
     const msgEl = document.getElementById('message');
     const popup = document.getElementById('scorePopup');
     const difficultySel = document.getElementById('difficulty');
+    const gameModeEl = document.getElementById('gameMode');
+    const scoreDisplayEl = document.getElementById('scoreDisplay');
+    const dartDisplayEl = document.getElementById('dartDisplay');
 
     // Board settings
     const boardCenter = 230;
@@ -139,6 +164,9 @@
     let aimState = 'horizontal';
     let dartsThrown = 0;
     let totalScore = 0;
+    let gameMode = 'score';
+    let remainingScore = 501;
+    let gameOver = false;
 
     function drawDartboard() {
       ctxBoard.clearRect(0, 0, 460, 460);
@@ -213,12 +241,12 @@
       const segmentIndex = Math.floor(angle / anglePerSegment);
       const baseScore = numbers[segmentIndex];
 
-      if (dist <= 6) return { score: 50, label: 'Inner Bull' };
-      if (dist <= 15) return { score: 25, label: 'Outer Bull' };
-      if (dist >= 190 && dist <= 200) return { score: baseScore * 2, label: `Double ${baseScore}` };
-      if (dist >= 105 && dist <= 115) return { score: baseScore * 3, label: `Triple ${baseScore}` };
-      if (dist > 200) return { score: 0, label: 'Miss' };
-      return { score: baseScore, label: `${baseScore}` };
+      if (dist <= 6) return { score: 50, label: 'Inner Bull', isDouble: true };
+      if (dist <= 15) return { score: 25, label: 'Outer Bull', isDouble: false };
+      if (dist >= 190 && dist <= 200) return { score: baseScore * 2, label: `Double ${baseScore}`, isDouble: true };
+      if (dist >= 105 && dist <= 115) return { score: baseScore * 3, label: `Triple ${baseScore}`, isDouble: false };
+      if (dist > 200) return { score: 0, label: 'Miss', isDouble: false };
+      return { score: baseScore, label: `${baseScore}`, isDouble: false };
     }
 
     function drawDart(x, y) {
@@ -250,29 +278,98 @@
       ctxBoard.restore();
     }
 
-    function showScorePopup(score, label) {
-      popup.textContent = `${label} (+${score})`;
+    function showScorePopup(score, label, isBust = false) {
+      if (isBust) {
+        popup.style.color = '#ff4444';
+        popup.textContent = 'BUST!';
+      } else if (gameMode === '501') {
+        popup.style.color = 'white';
+        popup.textContent = `${label} (-${score})`;
+      } else {
+        popup.style.color = 'white';
+        popup.textContent = `${label} (+${score})`;
+      }
       popup.style.opacity = '1';
       setTimeout(() => {
         popup.style.opacity = '0';
       }, 1400);
     }
 
+    function updateScoreDisplay() {
+      if (gameMode === '501') {
+        scoreDisplayEl.innerHTML = `Remaining: <span id="score">${remainingScore}</span>`;
+        dartDisplayEl.innerHTML = ` | Darts: <span id="dartCount">${dartsThrown}</span>`;
+      } else {
+        scoreDisplayEl.innerHTML = `Score: <span id="score">${totalScore}</span>`;
+        dartDisplayEl.innerHTML = ` | Dart: <span id="dartCount">${dartsThrown}</span>/5`;
+      }
+    }
+
     function throwDart(x, y) {
+      if (gameOver) return;
+      
       drawDart(x, y);
       const result = getDartScore(x, y);
-      totalScore += result.score;
       dartsThrown++;
-      scoreEl.textContent = totalScore;
-      dartEl.textContent = dartsThrown;
-      showScorePopup(result.score, result.label);
 
-      if (dartsThrown >= 5) {
-        msgEl.textContent = `🎯 Game Over! Final Score: ${totalScore}`;
-        clearInterval(sliderInterval);
+      if (gameMode === '501') {
+        // 501 game logic
+        const newRemaining = remainingScore - result.score;
+        
+        if (newRemaining < 0 || (newRemaining === 0 && !result.isDouble)) {
+          // Bust! Score goes back to what it was at start of turn
+          showScorePopup(result.score, result.label, true);
+          msgEl.innerHTML = '<span class="bust-message">BUST! Score unchanged.</span>';
+          setTimeout(() => {
+            if (!gameOver) {
+              msgEl.textContent = 'Click to set horizontal aim';
+              startSlider('horizontal');
+            }
+          }, 2000);
+        } else if (newRemaining === 0 && result.isDouble) {
+          // Win!
+          remainingScore = 0;
+          gameOver = true;
+          showScorePopup(result.score, result.label);
+          msgEl.innerHTML = `🎯 <span class="game-mode">CHECKOUT!</span> You finished 501 in ${dartsThrown} darts!`;
+          clearInterval(sliderInterval);
+        } else {
+          // Valid score
+          remainingScore = newRemaining;
+          showScorePopup(result.score, result.label);
+          
+          if (remainingScore === 1) {
+            msgEl.innerHTML = '<span class="bust-message">Need exactly 2 to finish (must be double 1)</span>';
+          } else if (remainingScore <= 40 && remainingScore % 2 === 0) {
+            msgEl.innerHTML = `<span class="game-mode">Checkout available: Double ${remainingScore/2}</span>`;
+          }
+          
+          setTimeout(() => {
+            if (!gameOver) {
+              if (remainingScore === 1) {
+                msgEl.innerHTML = '<span class="bust-message">Need exactly 2 to finish (must be double 1)</span>';
+              } else {
+                msgEl.textContent = 'Click to set horizontal aim';
+              }
+              startSlider('horizontal');
+            }
+          }, 1500);
+        }
       } else {
-        setTimeout(() => startSlider('horizontal'), 500);
+        // Score attack mode
+        totalScore += result.score;
+        showScorePopup(result.score, result.label);
+
+        if (dartsThrown >= 5) {
+          gameOver = true;
+          msgEl.textContent = `🎯 Game Over! Final Score: ${totalScore}`;
+          clearInterval(sliderInterval);
+        } else {
+          setTimeout(() => startSlider('horizontal'), 500);
+        }
       }
+      
+      updateScoreDisplay();
     }
 
     function startSlider(axis) {
@@ -304,7 +401,8 @@
     }
 
     document.body.addEventListener('click', () => {
-      if (dartsThrown >= 5) return;
+      if (gameOver) return;
+      
       if (aimState === 'horizontal') {
         hPos = sliderX;
         aimState = 'vertical';
@@ -319,18 +417,27 @@
       }
     });
 
+    gameModeEl.addEventListener('change', () => {
+      restartGame();
+    });
+
     function restartGame() {
+      gameMode = gameModeEl.value;
       dartsThrown = 0;
       totalScore = 0;
-      scoreEl.textContent = '0';
-      dartEl.textContent = '0';
+      remainingScore = 501;
+      gameOver = false;
       aimState = 'horizontal';
       msgEl.textContent = 'Click to set horizontal aim';
+      
+      updateScoreDisplay();
       drawDartboard();
       startSlider('horizontal');
     }
 
+    // Initialize game
     drawDartboard();
+    updateScoreDisplay();
     startSlider('horizontal');
   </script>
 </body>
